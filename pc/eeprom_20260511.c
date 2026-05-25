@@ -13,10 +13,12 @@
 #include <termios.h>
 
 
-  #define SOT 2
-  #define ACK 6
-  #define NAK 0x15
-  #define RESP_TIMEOUT 50
+#define SOT 2
+#define ACK 6
+#define NAK 0x15
+#define RESP_TIMEOUT 50
+
+#define FILE_INPUT_BUFFER_SIZE 1024
 
 
 int serial_port;
@@ -224,26 +226,38 @@ FILE* hexfile;                       // For reading an input hex file to program
 /// @brief Open the file in the input (inp) string.
 /// @return 0 success, -1 on error
 //////////////////////////////////////////////////
-int open_file(void)
+int open_file(char* path)
 {
   int rtn = 0;
   hexfile = NULL;  // in case we've been here before
-  char* path = inp;
+  
   int l = strlen(path);
   // skip whitespace
   char ch;
   do
   {
-    ch = *path;
-    l--;
     path++;
+    l--;
+    ch = *path;
+    //l--;
+    //path++;
   } while(isspace(ch) && l > 0);
   if(l == 0)
-  {
+  { printf("path too short\n");
     rtn = -1;
   }
   else
   {
+    // find the end
+    for(int i = 0; i < l; i++)
+    {
+      if(!isgraph(path[i]))
+      {
+        path[i] = '\0';
+        break;
+      }
+    }
+    printf("Opening <%s>\n", path);
     hexfile = fopen(path, "r");
     if( hexfile == NULL)
     {
@@ -257,16 +271,31 @@ int open_file(void)
 //////////////////////////////////////////////////
 /// @fn get_cmd
 /// @brief Gets command from user and executes
-/// @return -1, fail, 0 success, 1 quit, 2...
+/// @return -1, fail, 0 no cmd sent, 1 cmd sent, 2 quit
 /// //////////////////////////////////////////////
 int get_cmd(void)
 {
   int rtn = 0;
   int line_length = 0;
   static int reading_hex = 0;       // Are we currently sending a hex file?
+  char file_buffer[FILE_INPUT_BUFFER_SIZE];
 
   if(reading_hex)
   {
+    char * read_result = fgets(file_buffer, FILE_INPUT_BUFFER_SIZE, hexfile);
+    if(read_result == NULL)
+    {
+      printf("End of hex file\n");
+      reading_hex = 0;
+      rtn = 0;
+    }
+    else
+    {
+      int l = strlen(file_buffer);
+      printf("SENDING: <%s>\n", file_buffer);
+      write(serial_port, file_buffer, l);
+      rtn = 1;
+    }
   }
   else                             // No so get a keyboard command
   {
@@ -275,14 +304,27 @@ int get_cmd(void)
     line_length = strlen(inp);
     if(strncasecmp(inp, "QUIT", 4) == 0 ) // quit
     {
-      rtn = 1;
+      rtn = 2;
     }
     else if(strncasecmp(inp, "SEND", 4) == 0 ) // send file
     {
+      int file_result = open_file(inp + 4);  // skip the "SEND"
+      if(file_result == 0)
+      {
+        printf("opened file to send to programmer\n");
+        reading_hex = 1;
+        rtn = 0;
+      }
+      else
+      {
+        printf("Failed to open input file.\n");
+      }
+      rtn = 0;
     }
     else  // just send the command
     {
       write(serial_port, inp, line_length);
+      rtn = 1;
     }
   }
   return rtn;
@@ -404,6 +446,9 @@ int main(int argc, char* argv[])
 
   printf("\r\nSyned with CHEEPROM\r\n");
 
+
+
+
   //FILE*
   kb = fdopen(STDIN_FILENO, "r");
   if(kb == NULL) return -1;
@@ -413,9 +458,17 @@ int main(int argc, char* argv[])
   do
   {
     cmd_response = get_cmd();
-    printf("\n\nGetting response...\n");
-    prog_response = get_response();
-  } while (cmd_response != 1);
+    printf("cmd_response = %d\n", cmd_response);
+    if(cmd_response == 1)  // sent a command
+    {
+      printf("\n\nGetting response...\n");
+      prog_response = get_response();
+    }
+    else if(cmd_response < 0)  // error
+    {
+      printf("There was a command error\n");
+    }
+  } while (cmd_response != 2);
 
   // When exiting, shut off power first
   char quit_string[32];

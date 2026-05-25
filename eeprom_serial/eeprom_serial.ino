@@ -1,4 +1,4 @@
-
+ 
 ////////////////////////////////////////////////////
 ///  CHEEPROM_202605
 ///  Copyright 2026 William R Cooke
@@ -101,8 +101,8 @@ long hexval(char* s, int cnt)
   for(int i = 0; i < cnt; i++)
   {
     rtn = rtn * 16 + val(s[i]);
-    sprintf(msg, "%02d:%c:%d\n", i,s[i],rtn);
-    send_string(msg);
+    // BDK sprintf(msg, "%02d:%c:%d\n", i,s[i],rtn);
+    // BDK send_string(msg);
   }
   return rtn;
 }
@@ -164,14 +164,9 @@ void power_off()
 ///////////////////////////////////////////////
 void data_bus_in()
 {
-  // DDRC DATA_DDR_LOW &= ~DATA_LOW_MASK;
-  // DDRD DATA_DDR_HIGH &= ~DATA_HIGH_MASK;
   DDRC &= ~DATA_LOW_MASK;
   DDRD &= ~DATA_HIGH_MASK;
-  // Seems with no load, reading gets what was last written to port
-  // So, let's set to 0
-  // Also, good when powered down so we have all 0's
-  //write_data(0);
+
 }
 
 ///////////////////////////////////////////////
@@ -181,7 +176,6 @@ void data_bus_in()
 void data_bus_out()
 {
   DATA_DDR_LOW |= DATA_LOW_MASK;
-  //DDRD DATA_DDR_HIGH |= DATA_HIGH_MASK;
   DDRC |= DATA_LOW_MASK;
   DDRD |= DATA_HIGH_MASK;
 }
@@ -198,8 +192,6 @@ uint8_t read_data()
   uint8_t t1 = DATA_LOW_IN & DATA_LOW_MASK;
   uint8_t t2 = DATA_HIGH_IN & DATA_HIGH_MASK;
   rtn = t1 | t2;
-  sprintf(msg,"t1:%02X t2:%02X\n", t1, t2);
-  //send_string(msg);
 
   return rtn;
 }
@@ -276,7 +268,7 @@ void write_address(uint16_t address)
 /// @return 0 on success, -1 if error
 ////////////////////////////////////////////////////
 int program_byte(uint16_t address, uint8_t data)
-{send_string("program_byte() writing\n");
+{
   int rtn = 0;
   write_address(address);
   write_data(data);
@@ -287,7 +279,6 @@ int program_byte(uint16_t address, uint8_t data)
   // leave CE active for verify
   
   data_bus_in();
-  send_string("reading \n");
   // wait for completion and verify
   uint8_t test = 0;
   uint16_t tries = 1000;  // somewhat arbitrary -- >= 1 ms (~1000 ish)
@@ -296,21 +287,15 @@ int program_byte(uint16_t address, uint8_t data)
     digitalWrite(OE, LOW);
     test = read_data();
     digitalWrite(OE, HIGH);
-    //sprintf(msg, "TEST: %02X DATA: %02X\n", test, data);
-    //send_string(msg);
     if(test == data)
     {
-      sprintf(msg, "TEST: %02X DATA: %02x\n", test, data);
-      send_string(msg);
       break;
     }
   } while(--tries > 0);
-  sprintf(msg,"TRIES: %d\n", tries);
-  send_string(msg);
 
   if(tries == 0)
   {
-    send_string("Tries = 0\n");
+    // BDK send_string("Failed to verify: Tries = 0\n");
     rtn = -1;
   }
   digitalWrite(CE, HIGH);
@@ -334,7 +319,7 @@ int program_hex()
   send_string("Programming...\n");
   
   int rtn = 0;
-  // field variables
+  // hex field variables
   uint8_t cnt = 0;
   uint16_t address = 0;
   uint8_t typ = 0;
@@ -364,18 +349,12 @@ int program_hex()
     {
       // check checksum
       cs = 0;
-      sprintf(msg, "cnt:%d\n", cnt);
-      send_string(msg);
       for(int b = 0; b < (cnt + 5); b++)
       {
         uint8_t byt = hexval( &input[b * 2 + 1], 2);
-        sprintf(msg, "b:%d\n", byt);
-        send_string(msg);
         cs += byt;
       }
       
-      sprintf(msg,"cs%d\n", cs);
-      send_string(msg);
       if(cs != 0)
       {
         send_string("Hex record failed checksum\n");
@@ -383,7 +362,7 @@ int program_hex()
       }
       else
       {
-        send_string("CS passed\n");
+        // BDK send_string("CS passed\n");
       }
       
       if(rtn == 0)
@@ -418,8 +397,6 @@ int program_hex()
           res = program_byte(address + i, byt);
           if(res != 0) 
           {
-            sprintf(msg, "FAIL%04X:%02X\n", address + i, byt);
-            send_string(msg);
             rtn = -1;
           }
         }
@@ -438,25 +415,22 @@ int program_hex()
 int program_data()
 {
   int rtn = 0;
-  sprintf(msg, "LEN: %d\n", strlen(input));
-  send_string(msg);
   
   int l = strlen(input) - 1; // sub off leading p
   // check we have even number of chars
   if( (l & 0x01) == 1)
   {
-    sprintf(msg, "Uneven length %d\n", l);
-    send_string(msg);
     rtn = -1;
   }
   else
-  { send_string("even\n");
+  {
     for(int i = 0; i < l; i+=2)
-    {send_string("programming byte\n");
+    {
       long v = hexval(input + 1 + i, 2);
       if(v < 0)
       {
         sprintf(msg, "Invalid data: %c%c\n", input[i+1], input[i+2]);
+        send_string(msg);
         rtn = -1;
         break;
       }
@@ -501,6 +475,8 @@ void reset()
   current_address = 0;
   base_address = 0;
   send_string("\n\n\r\rCHEEPROM 2026 Atmel AT28Cxxx programmer\n");
+  send_string("\nCopyright 2026 William R Cooke\n");
+  send_string("\nVersion 1.0\n");
   send_string("Set to ...\n\r");
   send_string("AT28C64 (64K 8192 x 8) \n\r");
   send_string("base address of 0\n\r");
@@ -588,6 +564,7 @@ void menu()
   send_string("Axxxx    Set current address to xxxx\n");
   send_string("Bxxxx    Set base address of EEPROM to xxxx\n");
   send_string("Pxx{xx}  Progam data bytes xx starting at current address\n");
+  send_string("Fxx      Fill entire chip with vale xx\n");
   
 }
 ///////////////////////////////////////////////
@@ -596,15 +573,6 @@ void menu()
 /////////////////////////////////////////////////////////
 void send_hex()
 {
-//  for(int i = 0; i < 64; i++)
-//  {
-//    uint8_t d = read_byte((uint16_t) i);
-//    sprintf(msg, "READ: %04X : %02X\n", i, d);
-//    send_string(msg);
-//    delay(2);
-//  }
-//  return;
-  
   for(uint16_t rec = 0; rec < eeprom_size; rec += RECSZ)
   {
 
@@ -612,9 +580,11 @@ void send_hex()
     int checksum = 0;
     char* next_ch = str;
     long next_add = rec;  // TODO add offset
+    
     // Record header
     *next_ch = ':';
     next_ch++;
+    
     // Count field
     checksum += 16;
     *next_ch = '1';
@@ -636,14 +606,12 @@ void send_hex()
     next_ch++;
     *next_ch = '0';
     next_ch++;
+    
     // Data field
     for(int b = 0; b < RECSZ; b++)
     {
       uint16_t rd_add = (uint16_t) (next_add + b /* BDK - base_address */ & 0xffff);
       uint8_t data = read_byte( rd_add );
-      //sprintf(msg, "RD:%04X : %02X\n", rd_add, data);
-      //send_string(msg);
-      //uint8_t data = (uint8_t) (next_add + b & 0xff);
       checksum += data;
       *next_ch = hex_chars[data >> 4];
       next_ch++;
@@ -661,8 +629,48 @@ void send_hex()
     next_ch++;
     *next_ch = 0;
     send_string(str);
-    //delay(1);
   }
+}
+
+//////////////////////////////////////////////
+/// @fn fill_chip
+/// @brief fill entire chip with single hex value
+/// @return 0 on success, -1 on error
+//////////////////////////////////////////////
+int fill_chip()
+{
+  int rtn = 0;
+  int l = strlen(input);
+  if(l < 3) // "Fxx\n"
+  {
+    sprintf(msg, "cmd too short: %d\n", l);
+    send_string(msg);
+    rtn = -1;
+  }
+  else
+  {
+    long v = hexval(input + 1, 2);
+    if(v < 0)
+    {
+      rtn = -1;
+    }
+    else
+    {
+      send_string("Filling...\n");
+      uint8_t val = (uint8_t) v;
+      for(uint16_t addr = 0; addr < eeprom_size; addr++)
+      {
+        int res = program_byte(addr, v);
+        if(res < 0)
+        {
+          rtn = -1;
+          sprintf(msg, "Write failed at %04x\n", addr);
+        }
+      }
+    }
+  }
+
+  return rtn;
 }
 //////////////////////////////////////////////
 /// @fn parse_line
@@ -682,6 +690,7 @@ void send_hex()
 /// 2        Set chip to 256K
 /// X        Examine current address byte
 /// M        Print menu
+/// Fhh      Fill chip with hh
 ///////////////////////////////////////////////
 
 int parse_line()
@@ -800,7 +809,23 @@ int parse_line()
       menu();
       send_byte(ACK);
       break;
-    
+
+    case 'F':                    // Fill
+      {
+        int res = fill_chip();
+        if (res == 0)
+        {
+          send_string("Fill success.\n");
+          send_byte(ACK);
+        }
+        else
+        {
+          send_string("Fill failed.\n");
+          send_byte(NAK);
+        }
+        break;
+      }
+      
     default:
       send_string("\r\n");
       send_string(input);
