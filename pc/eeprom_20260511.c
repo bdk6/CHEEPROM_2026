@@ -17,14 +17,21 @@
 #define SOT 2
 #define ACK 6
 #define NAK 0x15
-#define RESP_TIMEOUT 50
-
+#define RESP_TIMEOUT 50                  // Timeout count for waiting on response
+#define READ_SIZE 64                     // Buffer size for reading from CHEEPROM
 #define FILE_INPUT_BUFFER_SIZE 1024
 
+#define INPUT_LENGTH 600        // Console input -- allows full length (255 bytes) hex line
 
-int serial_port;
-struct termios old_tty;
-struct termios new_tty;
+
+static char inp[INPUT_LENGTH];  // Console input buffer
+
+FILE* kb;           // Keyboard (stdin) as a stream
+FILE* hexfile;      // For reading a hex file input
+
+int serial_port;            // File descriptor for serial port
+struct termios old_tty;     // Save settings
+struct termios new_tty;     // New settings
 
 ///////////////////////////////////////////////////
 /// @fn setport
@@ -82,11 +89,11 @@ int setport(void)
   new_tty.c_cc[VTIME] = 0;
   new_tty.c_cc[VMIN] =  0;
 
-//  tcsetattr(serial_port,TCSAFLUSH, &new_tty);
+//  BDK tcsetattr(serial_port,TCSAFLUSH, &new_tty);
   cfsetispeed(&new_tty, B115200);
   cfsetospeed(&new_tty, B115200);
   tcsetattr(serial_port, TCSANOW, &new_tty);
-  printf("Set attributes\n");
+  // BDK printf("Set attributes\n");
 
   return rtn;
 }
@@ -138,16 +145,15 @@ void set_raw_mode(void)
 ////////////////////////////////////////////////
 int send_string(char* s)
 {
-  // int rtn = 0;
   int l = strlen(s);
   for(int i = 0; i < l; i++)
   {
+    // TODO change to single write
     write(serial_port, &s[i], 1);
   }
   return l;
 }
 
-FILE* kb;       // stdin as a file stream
 
 //////////////////////////////////////////////
 /// @fn exit_fn
@@ -157,7 +163,7 @@ void exit_fn(void)
 {
   tcsetattr(STDIN_FILENO, TCSAFLUSH, &old_console);
   close(serial_port);
-  fclose(kb);
+  if(kb != NULL) fclose(kb);
 }
 
 
@@ -180,9 +186,6 @@ int get_string(char* s, int cnt)
   return rtn;
 }
 
-#define INPUT_LENGTH 600             // Will allow max length hex line (255 bytes)
-static char inp[INPUT_LENGTH];       // Input line buffer
-FILE* hexfile;                       // For reading an input hex file to program
 
 //////////////////////////////////////////////////
 /// @fn open_file
@@ -235,7 +238,7 @@ int open_file(char* path)
 /// @return -1, fail, 0 no cmd sent, 1 cmd sent, 2 quit
 /// //////////////////////////////////////////////
 int get_cmd(void)
-{
+{  // TODO Add code to skip/remove whitespace
   int rtn = 0;
   int line_length = 0;
   static int reading_hex = 0;       // Are we currently sending a hex file?
@@ -291,8 +294,6 @@ int get_cmd(void)
   return rtn;
 }
 
-#define RESP_TIMEOUT 50
-#define READ_SIZE    64
 
 /////////////////////////////////////////////////////////////
 /// @fn get_response
@@ -358,6 +359,7 @@ int get_response(void)
   return rtn;
 }
 
+
 //////////////////////////////////////////////
 /// @fn prog_sync
 /// @brief synchronize with CHEEPROM
@@ -388,7 +390,7 @@ int prog_sync(void)
 int main(int argc, char* argv[])
 {
   int rtn = 0;
-  atexit(exit_fn);
+  // BDK atexit(exit_fn);
 
   printf("Starting...\n");
   setport();
@@ -400,29 +402,25 @@ int main(int argc, char* argv[])
     return -1;
   }
 
-  char c;
-
-  sleep(2); // 5);
+  sleep(2);     // Give CHEEPROM a little time to wake up
 
   prog_sync();
+  printf("\r\nSynced with CHEEPROM\r\n");
 
-  printf("\r\nSyned with CHEEPROM\r\n");
-
-  kb = fdopen(STDIN_FILENO, "r");
+  kb = fdopen(STDIN_FILENO, "r");  // Make a stream of keyboard so we can use fgets()
   if(kb == NULL) return -1;
 
   atexit(exit_fn);
-
 
   int cmd_response = 0;
   int prog_response = 0;
   do
   {
     cmd_response = get_cmd();
-    printf("cmd_response = %d\n", cmd_response);
+    // BDK printf("cmd_response = %d\n", cmd_response);
     if(cmd_response == 1)  // sent a command
     {
-      printf("\n\nGetting response...\n");
+      // BDK printf("\n\nGetting response...\n");
       prog_response = get_response();
     }
     else if(cmd_response < 0)  // error
@@ -432,9 +430,7 @@ int main(int argc, char* argv[])
   } while (cmd_response != 2);
 
   // When exiting, shut off power first
-  char quit_string[32];
-  sprintf(quit_string, "D\n");
-  write(serial_port, quit_string, strlen(quit_string));
+  write(serial_port, "D\n", 2);
 
   return rtn;
 }
