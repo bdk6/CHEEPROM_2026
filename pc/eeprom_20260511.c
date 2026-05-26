@@ -1,5 +1,6 @@
 // Program to send data to serial port eeprom programmer
-// wrc 20260511
+// Copyright 2026 William R Cooke 
+//  20260511
 
 #include <stdio.h>
 #include <stdlib.h>
@@ -25,10 +26,15 @@ int serial_port;
 struct termios old_tty;
 struct termios new_tty;
 
+///////////////////////////////////////////////////
+/// @fn setport
+/// @brief Configure the serial port for CHEEPROM
+/// @return 0 on success, -1 on error
+///////////////////////////////////////////////////
 int setport(void)
 {
   int rtn = 0;
-  printf("Setting port...\n");
+  // BDK printf("Setting port...\n");
   
   serial_port = open("/dev/ttyUSB0", O_RDWR);
   printf("Opened serial port fd=%d\n", serial_port);
@@ -45,10 +51,10 @@ int setport(void)
   }
   else
   {
-    printf("done...\n");
+    // BDK printf("done...\n");
   }
 
-  printf("Got attributes\n");
+// BDK   printf("Got attributes\n");
   new_tty = old_tty;
   new_tty.c_cflag &= ~PARENB;   // clear parity
   new_tty.c_cflag &= ~CSTOPB;   // One stop bit
@@ -87,6 +93,10 @@ int setport(void)
 
 struct termios old_console;
 struct termios new_console;
+////////////////////////////////////////////////////
+/// @fn set_raw_mode  depracated, remove
+/// @brief puts terminal into raw mode
+////////////////////////////////////////////////////
 void set_raw_mode(void)
 {
   // set raw mode from viewsourecode.org/snaptoken/kilo/02.enteringRawMode.html
@@ -118,80 +128,36 @@ void set_raw_mode(void)
   new_console.c_cc[VTIME] = 1;  // tenths of second to wait for input
 
   tcsetattr(STDIN_FILENO, TCSAFLUSH, &new_console);
-
-
 }
 
-////////////////////////////////////////////
-///
-///
-
-int put_char = 0;
-int get_char = 0;
-#define BUFFSIZE   512
-char buffer[BUFFSIZE];
-
-int insert_char(char c)
+/////////////////////////////////////////////////
+/// @fn send_string
+/// @brief Send a string to the programmer
+/// @param[in] s  String to send
+/// @return Number chars sent or  -1 on error
+////////////////////////////////////////////////
+int send_string(char* s)
 {
-  int rtn = -1;
-  int next = (put_char + 1 ) % BUFFSIZE;
-  if(next == get_char)
-  {
-    // no space
-    return rtn;
-  }
-  buffer[put_char] = c;
-  put_char = next;
-  rtn = 0;
-
-  return rtn;
-}
-
-int return_char(void)
-{
-  int rtn = -1;
-  if(put_char != get_char)
-  {
-    rtn = buffer[get_char];
-    get_char = (get_char + 1) % BUFFSIZE;
-  }
-
-  return rtn;
-}
-
-int read_port(void)
-{
-  //printf("Reading serial port \n");
-  char input[128];
-  int cnt = read(serial_port, input, 128);
-  for(int i = 0; i < cnt; i++)
-  {
-    insert_char(input[i]);
-  }
-
-  if(cnt > 0)
-  {
-    //printf("<%d>", cnt);
-    write(STDOUT_FILENO, input, cnt);
-  }
-  return cnt;
-}
-
-
-void send_string(char* s)
-{ //printf("Sending <%s>\n", s);
+  // int rtn = 0;
   int l = strlen(s);
   for(int i = 0; i < l; i++)
   {
     write(serial_port, &s[i], 1);
   }
+  return l;
 }
 
+FILE* kb;       // stdin as a file stream
 
+//////////////////////////////////////////////
+/// @fn exit_fn
+/// @brief Shut everything down on exit
+/////////////////////////////////////////////
 void exit_fn(void)
 {
   tcsetattr(STDIN_FILENO, TCSAFLUSH, &old_console);
   close(serial_port);
+  fclose(kb);
 }
 
 
@@ -211,12 +177,9 @@ int get_string(char* s, int cnt)
     int res = read(STDIN_FILENO, &c, 1);
   }while(0);
 
-
-
   return rtn;
 }
 
-FILE* kb;                            // stdin as a file
 #define INPUT_LENGTH 600             // Will allow max length hex line (255 bytes)
 static char inp[INPUT_LENGTH];       // Input line buffer
 FILE* hexfile;                       // For reading an input hex file to program
@@ -239,8 +202,6 @@ int open_file(char* path)
     path++;
     l--;
     ch = *path;
-    //l--;
-    //path++;
   } while(isspace(ch) && l > 0);
   if(l == 0)
   { printf("path too short\n");
@@ -351,11 +312,7 @@ int get_response(void)
   do
   {
     int cnt = read(serial_port, response, READ_SIZE); // &ch, 1);
-    //if(cnt == 1)
-    //{
-    //  putchar(ch);
-    //  timeout = RESP_TIMEOUT;
-    //}
+
     if (cnt > 0)
     {
       for(int i = 0; i < cnt; i++)
@@ -366,7 +323,6 @@ int get_response(void)
           exit_flag = 1;
           break;
         }
-        
         putchar(response[i]);
       }
       timeout = RESP_TIMEOUT;
@@ -380,7 +336,7 @@ int get_response(void)
       }
       sleep(1);
     }
-  } while( !exit_flag); // ch != ACK && ch != NAK && timeout > 0);
+  } while( !exit_flag);
 
   if( timeout == 0)
   {
@@ -402,6 +358,25 @@ int get_response(void)
   return rtn;
 }
 
+//////////////////////////////////////////////
+/// @fn prog_sync
+/// @brief synchronize with CHEEPROM
+/// @return 1 if synced, 0 otherwise
+//////////////////////////////////////////////
+int prog_sync(void)
+{
+  int rtn = 1;
+  char snc;
+  do
+  {
+    read(serial_port, &snc, 1);
+  } while( snc != SOT);
+
+  snc = ACK;
+  write(serial_port, &snc, 1);
+  return 1;
+}
+
 
 //////////////////////////////////////////////////////////////
 /// @fn main
@@ -413,6 +388,7 @@ int get_response(void)
 int main(int argc, char* argv[])
 {
   int rtn = 0;
+  atexit(exit_fn);
 
   printf("Starting...\n");
   setport();
@@ -425,36 +401,21 @@ int main(int argc, char* argv[])
   }
 
   char c;
-  // set_raw_mode();
-  //atexit(exit_fn);
 
   sleep(2); // 5);
 
-  // sync()
-  char snc;
-  #define SOT 2
-  #define ACK 6
-  #define NAK 0x15
-
-  // sync
-  do
-  {
-    read(serial_port, &snc, 1);
-  } while( snc != SOT);
-  snc = ACK;
-  write(serial_port, &snc, 1);
+  prog_sync();
 
   printf("\r\nSyned with CHEEPROM\r\n");
 
-
-
-
-  //FILE*
   kb = fdopen(STDIN_FILENO, "r");
   if(kb == NULL) return -1;
 
-  int prog_response = 0;
+  atexit(exit_fn);
+
+
   int cmd_response = 0;
+  int prog_response = 0;
   do
   {
     cmd_response = get_cmd();
@@ -474,66 +435,6 @@ int main(int argc, char* argv[])
   char quit_string[32];
   sprintf(quit_string, "D\n");
   write(serial_port, quit_string, strlen(quit_string));
-  return 0;
-
-
-  // now try communicating with CHEEPROM
-  printf("\r\nTalk to CHEEPROM\r\n");
-  char msg[] = "Hello, CHEEPROM\r\n";
-  write(serial_port, "U\r", 2);
-  write(serial_port, "R\r", 2); // 3);
-  while(1)
-  {
-    char cin[32];
-    int ser = read(serial_port, &cin, 32);
-    if(ser)
-    {
-      write(STDOUT_FILENO, &cin, ser); // 1);
-    }
-  }
-  tcsetattr(STDIN_FILENO, TCSAFLUSH, &old_console);
-  printf("Exited raw mode\n");
-  /////////////////////////////////////////////
-
-  close(serial_port);
-  fclose(kb);
-  return 0;
-
-
-  //sleep(5);
-
-  send_string("Hello, programmer!\n");
-
-  int i = 0;
-
-  while(1)
-  {
-    char c = (char)i;
-    //int wrote = write(serial_port, &c, 1);
-    //printf("wrote %d\n", wrote);
-
-    send_string("Command AB90\n");
-    i++;
-
-    sleep(1);
-
-    //char buf[32];
-    //int cnt = read(serial_port, buf, 32);
-
-    int cnt = read_port();
-    //printf("cnt = %d\n", cnt & 0xff);
-
-    for(int i = 0; i < cnt; i++)
-    {
-      //write(1, &buf[i], 1);
-      char ch = return_char();
-      printf("%c", ch); // putchar(ch);
-      //printf(":%02X <%c>\n", ch, ch);  // buf[i] & 0xff);
-    }
-
-  }
-
-
 
   return rtn;
 }
