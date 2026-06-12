@@ -1,0 +1,22 @@
+/*
+ ============================================================================
+ Name        : EEPROM_Term.c
+ Author      : Will Cooke
+ Version     :
+ Copyright   : (c) Copyright 2022 Will Cooke
+ Description : Terminal program to control EEPROM programmer
+ ============================================================================
+ */
+
+#include <stdio.h>
+#include <stdlib.h>
+#include <stdint.h>
+
+
+
+int main(void)
+{
+  puts("Hello, EEPROM!");
+
+  return EXIT_SUCCESS;
+}

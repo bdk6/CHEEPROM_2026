@@ -1,0 +1,63 @@
+//////////////////////////////////////////////////////////////////////////////
+///  @file EEProg.c
+///  @copy 2022 William R Cooke
+///  @brief Command Line Interface to EEPROM programmer
+//////////////////////////////////////////////////////////////////////////////
+
+#include <stdio.h>
+#include <unistd.h>
+
+/*
+functions:
+write hex
+read hex
+erase
+set type 2864 or 28256
+set offset 
+program byte(s). 
+-w filename
+-r filename
+-e 
+-t 2864 28256
+-o address
+-p addr byte(s)
+
+write
+
+open file
+while not eof. && not timeout
+  read line
+  send.   (hex or binary?)
+  wait for ack / timeout
+close file
+
+read
+
+open file
+while not end && not timeout
+  send read
+  get data / timeout
+  save to file
+  send ack
+close file
+*/
+
+char optstring[] = "w:r:et:o:p:";
+
+
+int main(int argc, char** argv)
+{
+  int op;
+  do
+  {
+    op = getopt(argc, argv, optstring);
+    printf("Option = %d\n", op);
+  } while(op > 0);
+
+
+  return 0;
+}
+
+
+  
+  

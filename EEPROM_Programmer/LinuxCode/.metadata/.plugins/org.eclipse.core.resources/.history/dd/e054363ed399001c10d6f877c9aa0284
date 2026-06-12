@@ -1,0 +1,48 @@
+/*
+ ============================================================================
+ Name        : EEPROM_Term.c
+ Author      : Will Cooke
+ Version     :
+ Copyright   : (c) Copyright 2022 Will Cooke
+ Description : Terminal program to control EEPROM programmer
+ ============================================================================
+ */
+
+#include <stdio.h>
+#include <stdlib.h>
+#include <stdint.h>
+#include <string.h>
+
+#include <fcntl.h>      // Contains file controls like O_RDWR
+#include <errno.h>
+#include <termios.h>    // Contains POSIX terminal control definitions
+#include <unistd.h>     // low level read,write,close
+
+
+int openStreams(char* serial);
+
+
+
+int main(void)
+{
+  puts("Hello, EEPROM!");
+  int serial_port = openStreams("/dev/ttyUSB0");
+  if(serial_port < 0)
+  {
+    // There was an error
+    printf("Can't open serial port %s: ERROR: %d : %s", "/dev/ttyUSB0", errno,
+           strerr(errno));
+  }
+  printf("Serial port file descriptor: %d", serial_port);
+
+  return EXIT_SUCCESS;
+}
+
+
+int openStreams(char* serial)
+{
+  int rtn = -1;
+  rtn = open(serial, O_RDWR);
+
+  return rtn;
+}

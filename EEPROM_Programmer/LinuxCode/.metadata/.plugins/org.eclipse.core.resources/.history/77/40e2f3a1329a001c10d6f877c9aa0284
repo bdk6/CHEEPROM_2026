@@ -1,0 +1,70 @@
+/*
+ ============================================================================
+ Name        : EEPROM_Term.c
+ Author      : Will Cooke
+ Version     :
+ Copyright   : (c) Copyright 2022 Will Cooke
+ Description : Terminal program to control EEPROM programmer
+ ============================================================================
+ */
+
+#include <stdio.h>
+#include <stdlib.h>
+#include <stdint.h>
+#include <string.h>
+
+#include <fcntl.h>      // Contains file controls like O_RDWR
+#include <errno.h>
+#include <termios.h>    // Contains POSIX terminal control definitions
+#include <unistd.h>     // low level read,write,close
+
+
+
+// termios struct:
+//   tcflag_t c_iflag;     // input mode flags
+//   tcflag_t c_oflag;     // output mode flags
+//   tcflag_t c_cflag;     // control mode flags
+//   tcflag_t c_lflag;     // local mode flags
+//   cc_t c_line;          // line discipline
+//   cc_t c_cc[NCCS];      // control characters
+
+struct termios programmer;
+
+
+int openStreams(char* serial);
+
+
+
+int main(void)
+{
+  int serial_port = openStreams("/dev/ttyUSB0");
+  if(serial_port < 0)
+  {
+    // There was an error
+    printf("Can't open serial port %s: ERROR: %d : %s \n", "/dev/ttyUSB0", errno,
+           strerror(errno));
+  }
+  else
+  {
+    printf("Opened port %s as file descriptor %d \n",
+        "/dev/ttyUSB0", serial_port);
+
+    // read in current serial port settings and modify
+    if(tcgetattr(serial_port, &programmer) != 0)
+    {
+      printf("Error %d from tcgetattr: %s \n", errno, strerror(errno));
+    }
+
+  }
+
+  return EXIT_SUCCESS;
+}
+
+
+int openStreams(char* serial)
+{
+  int rtn = -1;
+  rtn = open(serial, O_RDWR);
+
+  return rtn;
+}

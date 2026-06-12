@@ -1,0 +1,17 @@
+/*
+ ============================================================================
+ Name        : EEPROM_Term.c
+ Author      : Will Cooke
+ Version     :
+ Copyright   : (c) Copyright 2022 Will Cooke
+ Description : Hello World in C, Ansi-style
+ ============================================================================
+ */
+
+#include <stdio.h>
+#include <stdlib.h>
+
+int main(void) {
+	puts("Hello, EEPROM!"); /* prints Hello, EEPROM! */
+	return EXIT_SUCCESS;
+}

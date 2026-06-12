@@ -1,0 +1,27 @@
+
+
+#include <stdio.h>
+#include <stdint.h>
+#include <stdlib.h>
+
+
+FILE* infile;
+FILE* outfile;
+
+int main(int argc, char** argv)
+{
+  int rtn = 0;
+  infile = fopen("/dev/ttyUSB0", "r+");
+  outfile = fopen("/dev/ttyUSB0", "w");
+
+  if(infile == NULL || outfile == NULL)
+  {
+    printf("Couldn't open a file\n");
+  }
+  
+
+
+
+
+  return rtn;
+}

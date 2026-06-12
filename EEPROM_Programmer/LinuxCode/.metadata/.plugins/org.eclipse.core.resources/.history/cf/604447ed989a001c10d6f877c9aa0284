@@ -1,0 +1,166 @@
+/*
+ ============================================================================
+ Name        : EEPROM_Term.c
+ Author      : Will Cooke
+ Version     :
+ Copyright   : (c) Copyright 2022 Will Cooke
+ Description : Terminal program to control EEPROM programmer
+ ============================================================================
+ */
+
+#include <stdio.h>
+#include <stdlib.h>
+#include <stdint.h>
+#include <string.h>
+
+#include <fcntl.h>      // Contains file controls like O_RDWR
+#include <errno.h>
+#include <termios.h>    // Contains POSIX terminal control definitions
+#include <unistd.h>     // low level read,write,close
+
+
+
+// termios struct:
+//   tcflag_t c_iflag;     // input mode flags
+//   tcflag_t c_oflag;     // output mode flags
+//   tcflag_t c_cflag;     // control mode flags
+//   tcflag_t c_lflag;     // local mode flags
+//   cc_t c_line;          // line discipline
+//   cc_t c_cc[NCCS];      // control characters
+
+// c_cflag
+//  PARENB                 // parity bit: 1 for parity
+//  CSTOPB                 // stop bits: 1 for 2 stop, 0 for 1
+//  CSIZE                  // data bits: &=~CSIZE clear all then |= ...
+//                         // CS5, CS6, CS7, CS8 for 5,6,7,8 bits
+//  CRTSCTS                // RTS/CTS flow: &= ~ CRTSCTS none, |= CRTSCTS on
+//  CREAD                  // Enable READING!  (|= CREAD)
+//  CLOCAL                 // Local mode, no modem control lines
+// c_lflag
+//  ICANON                 // Canonical mode: &= ~ICANON disables
+//  ECHO                   // &= ~ECHO, &= ~ECHOE, &= ~ECHONL disables
+//  ISIG                   // &= ~ISGIG disables signal chars
+// c_iflag                 //
+//  IXOFF                  // xoff processing: 1 to enable
+//  IXON                   // xon processing: 1 to enable
+//  IXANY                  // xoff,xon processing: 1 to enable
+//  IGNBRK                 // break
+//  BRKINT                 // break interrupt?
+//  PARMRK                 // ??
+//  ISTRIP                 // ??
+//  INLCR                  // ?? Ignore NL,CR?
+//  IGNCR                  // Ignore CR?
+//  ICRNL                  // Ignore NL
+//                         // &=~(IGNBRK|BRKINT|PARMRK|ISTRIP|INLCR|IGNCR|ICRNL)
+// c_oflag                 // output flags
+//  OPOST                  // output special interp: &= ~OPOST
+//  ONLCR                  // prevent NL->CRNL &= ~ONLCR
+//  OXTABS                 // not defined in LInux?
+//  ONOEOT                 // not defined in LInux?
+//  XTABS                  // ??
+// c_cc                    // control characters
+//  VMIN                   // # characters                 (0 to 255)
+//  VTIME                  // timeout (tenths of a second) (0 to 255)
+//         // VMIN=0,VTIME=0  return with whats available
+//         // VMIN>0,VTIME=0  wait indefinitely for VMIN chars
+//         // VMIN=0,VTIME>0  block until something comes or timeout
+//         // VMIN>0,VTIME>0  block until VMIN chars or timeout
+//         // tty.c_cc[VTIME] = 10;   // Wait 1 sec
+//         // tty.c_cc[VMIN]  = 0;    // Any number of characters
+// cfsetispeed(&tty, B9600);
+// cfsetospeed(&tty, B9600);
+//  set baud rate: B0, B50, B75, B110, B134, B150, B200, B300, B600, B1200,
+//           B1800, B2400, B4800, B9600, B19200, B38400, B57600, B115200,
+//           B230400, B460800
+// cfsetspeed(&tty, B9600);   set both input and output
+// With gcc, you can set any number for Bxxxx -> cfsetspeed(&tty, 12345678);
+
+//
+struct termios programmer;
+
+int serialFD;
+
+
+int openStreams(char* serial);
+int setSerial(int fd, struct termios port, int baudRate);
+
+
+
+int main(void)
+{
+  int serial_port = openStreams("/dev/ttyUSB0");
+  if(serial_port < 0)
+  {
+    // There was an error
+    printf("Can't open serial port %s: ERROR: %d : %s \n", "/dev/ttyUSB0", errno,
+           strerror(errno));
+  }
+  else
+  {
+    printf("Opened port %s as file descriptor %d \n",
+        "/dev/ttyUSB0", serial_port);
+    setSerial(serial_port,programmer, B115200);
+
+
+  }
+
+  return EXIT_SUCCESS;
+}
+
+
+int openStreams(char* serial)
+{
+  int rtn = -1;
+  rtn = open(serial, O_RDWR);
+
+  return rtn;
+}
+
+int setSerial(int fd, struct termios port, int baudRate)
+{
+  int rtn = 0;
+  if(tcgetattr(fd, &programmer) != 0)
+  {
+    printf("Serial port error (%d): %s\n", errno, strerror(errno));
+    rtn = -1;
+  }
+  else
+  {
+    // Control mode flags
+    programmer.c_cflag &= ~PARENB;        // disable parity
+    programmer.c_cflag &= ~CSTOPB;        // One stop bit
+    programmer.c_cflag &= ~CSIZE;         // Clear bits per word...
+    programmer.c_cflag |= CS8;            // Then set to 8
+    programmer.c_cflag &= ~CRTSCTS;       // No hardware flow control
+    programmer.c_cflag |= CREAD | CLOCAL; // Enable reading and set local mode
+    // Local mode flags
+    programmer.c_lflag &= ~ICANON;        // Disable canonical mode
+    programmer.c_lflag &= ~ECHO;          // Disalbe all echos
+    programmer.c_lflag &= ~ECHOE;         // including erasure
+    programmer.c_lflag &= ~ECHONL;        // and newline
+    programmer.c_lflag &= ~ISIG;          // Disable signal characters
+    programmer.c_lflag |= (IXON | IXOFF | IXANY); // turn on software flow
+    // Turn off special receive character handling
+    programmer.c_lflag &= ~(IGNBRK|BRKINT|PARMRK|ISTRIP|INLCR|IGNCR|ICRNL);
+    // Output mode flags
+    programmer.c_oflag &= ~OPOST;         // No output byte interpretation
+    programmer.c_oflag &= ~ONLCR;         // Don't convert cr/lf
+    // The next two aren't defined in Linux
+    //programmer.c_oflag &= ~OXTABS;        // Don't convert tabs to spaces
+    //programmer.c_oflag &= ~ONOEOT;        // Don't remove EOT characters
+    // Control
+    programmer.c_cc[VTIME] = 0;           // Don't wait for characters
+    programmer.c_cc[VMIN]  = 0;           // No timeout
+    // Set baud rate
+    cfsetispeed(&programmer, baudRate);   // Set input baud rate
+    cfsetospeed(&programmer, baudRate);   // Set output baud rate
+    // Save the settings and apply now
+    if(tcsetattr(fd, TCSANOW, &programmer) != 0)
+    {
+      printf("Serial port error (%d): %s\n", errno, strerror(errno));
+      rtn = -1;
+    }
+  }
+
+  return rtn;
+}
