@@ -28,6 +28,9 @@ static char inp[INPUT_LENGTH];  // Console input buffer
 
 FILE* kb;           // Keyboard (stdin) as a stream
 FILE* hexfile;      // For reading a hex file input
+FILE* savefile;     // For saving hex file read from EEPROM
+
+static int saving_hex = 0;      // If we are saving output from Read command
 
 int serial_port;            // File descriptor for serial port
 struct termios old_tty;     // Save settings
@@ -161,7 +164,7 @@ int send_string(char* s)
 /////////////////////////////////////////////
 void exit_fn(void)
 {
-  tcsetattr(STDIN_FILENO, TCSAFLUSH, &old_console);
+  // BDK tcsetattr(STDIN_FILENO, TCSAFLUSH, &old_console);
   close(serial_port);
   if(kb != NULL) fclose(kb);
 }
@@ -186,10 +189,49 @@ int get_string(char* s, int cnt)
   return rtn;
 }
 
+//////////////////////////////////////////////////
+/// @fn get_filename_from_string
+/// @brief separates out filename from input string
+/// @param[in] path String with filename
+/// @return Pointer to start of filename, NULL on error
+////////////////////////////////////////////////////////
+char* get_filename_from_string(char* path)
+{
+  char* rtn = NULL;
+  int l = strlen(path);
+  // skip whitespace
+  char ch;
+  do
+  {
+    path++;
+    l--;
+    ch = *path;
+  } while(isspace(ch) && l > 0);
+  if(l == 0) // No filename present after whitespace
+  {
+    printf("No filename present\n");
+    rtn = NULL;
+  }
+  else
+  {
+    rtn = path;
+    // find the end of filename
+    for(int i = 0;  i < l; i++)
+    {
+      if( !isgraph(path[i]) )
+      {
+        path[i] = '\0';
+        break;
+      }
+    }
+    printf("Found: %s\n", path);
+  }
+  return rtn;
+}
 
 //////////////////////////////////////////////////
 /// @fn open_file
-/// @brief Open the file in the input (inp) string.
+/// @brief Open file from input string for reading.
 /// @return 0 success, -1 on error
 //////////////////////////////////////////////////
 int open_file(char* path)
@@ -197,6 +239,28 @@ int open_file(char* path)
   int rtn = 0;
   hexfile = NULL;  // in case we've been here before
   
+  ////////////////////////////////////////////////
+  // New code here
+  char* fn = get_filename_from_string(path);
+  printf("Hex file name: <%s>\n", fn);
+  if(fn != NULL)
+  {
+    hexfile = fopen(fn, "r");
+    if( hexfile == NULL)
+    {
+      rtn = -1;
+    }
+  }
+  else
+  {
+    rtn = -1;
+    printf("No filename\n");
+  }
+  return rtn;
+//   End of new code
+////////////////////////////////////////////////
+
+
   int l = strlen(path);
   // skip whitespace
   char ch;
@@ -227,6 +291,42 @@ int open_file(char* path)
     {
       rtn = -1;
     }
+  }
+
+  return rtn;
+} 
+
+//////////////////////////////////////////////////
+/// @fn open_save_file
+/// @brief Open file from input (inp) for writing.
+/// @param[in] path Input string
+/// @return 0 on success, -1 if error
+//////////////////////////////////////////////////
+int open_save_file(char* path)
+{
+  int rtn = 0;
+  saving_hex = 0;
+  savefile = NULL;  // In case we've been here before
+  char* fn = get_filename_from_string(path);
+  printf("Save file name: <%s>\n", fn);
+  if(fn != NULL)
+  { printf("Opening save_file %s\n", fn);
+    savefile = fopen(fn, "w");
+    if(savefile == NULL)
+    {
+      rtn = -1;
+      printf("Couldn't open output file\n");
+    }
+    else
+    {
+    
+
+    }
+  }
+  else
+  {
+    rtn = -1;
+    printf("No filename\n");
   }
 
   return rtn;
@@ -265,14 +365,28 @@ int get_cmd(void)
   {
     printf("COMMAND:> ");
     fgets(inp, INPUT_LENGTH, kb);  // Read input from keyboard
+
+    // TODO remove leading whitespace
+
     line_length = strlen(inp);
-    if(strncasecmp(inp, "QUIT", 4) == 0 ) // quit
+
+   printf("line len %d\n", line_length);
+    int idx = 0;
+    while(isspace(inp[idx]) && idx < line_length)
+    {
+      idx++;
+    }
+    char* cmd_string = (idx == line_length)? inp : inp + idx;
+    line_length = strlen(cmd_string);
+    printf("New line length = %d\n", line_length);
+
+    if(strncasecmp(cmd_string, "QUIT", 4) == 0 ) // quit
     {
       rtn = 2;
     }
-    else if(strncasecmp(inp, "SEND", 4) == 0 ) // send file
+    else if(strncasecmp(cmd_string, "SEND", 4) == 0 ) // send file
     {
-      int file_result = open_file(inp + 4);  // skip the "SEND"
+      int file_result = open_file(cmd_string + 4);  // skip the "SEND"
       if(file_result == 0)
       {
         printf("opened file to send to programmer\n");
@@ -285,9 +399,28 @@ int get_cmd(void)
       }
       rtn = 0;
     }
-    else  // just send the command
-    {
-      write(serial_port, inp, line_length);
+
+    else  // send the command
+    {printf("Sending cmd toupper(cmd_string[0]) %c \n", toupper(cmd_string[0]) );
+      // Check for read command and save output
+      if( toupper(cmd_string[0]) == 'R')                 // Read cmd, save to file
+      {
+        int save_file_result = open_save_file(cmd_string + 1);
+        printf("save_file_result = %d\n", save_file_result);
+        if(save_file_result != 0)
+        {
+          printf("Could not open output file for saving .hex output\n");
+        }
+        else
+        {
+          saving_hex = 1;
+        }
+        cmd_string[1] = '\n';    // Don't sent the  filename
+        line_length = 2;
+      }
+      
+printf("Writing to serial port\n");
+      write(serial_port, cmd_string, line_length);
       rtn = 1;
     }
   }
@@ -315,16 +448,25 @@ int get_response(void)
     int cnt = read(serial_port, response, READ_SIZE); // &ch, 1);
 
     if (cnt > 0)
-    {
+    {printf("parsing return chars: %d\n", cnt);
       for(int i = 0; i < cnt; i++)
       {
         ch = response[i];
         if(ch == ACK || ch == NAK )
         {
           exit_flag = 1;
+          if(saving_hex)
+          {
+            saving_hex = 0;   // Stop saving output to file
+            fclose(savefile);
+          }
           break;
         }
         putchar(response[i]);
+        if(saving_hex)
+        {
+          fputc(response[i], savefile);
+        }
       }
       timeout = RESP_TIMEOUT;
     }
